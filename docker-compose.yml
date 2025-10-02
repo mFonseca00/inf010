@@ -13,9 +13,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./Atividade_1.sql:/docker-entrypoint-initdb.d/01-Atividade_1.sql
-      - ./Atividade_2.sql:/docker-entrypoint-initdb.d/02-Atividade_2.sql
-      - ./Atividade_3.sql:/docker-entrypoint-initdb.d/03-Atividade_3.sql
     networks:
       - inf010-network
 
