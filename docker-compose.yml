@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: inf010-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inf010_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Atividade_1.sql:/docker-entrypoint-initdb.d/01-Atividade_1.sql
+      - ./Atividade_2.sql:/docker-entrypoint-initdb.d/02-Atividade_2.sql
+      - ./Atividade_3.sql:/docker-entrypoint-initdb.d/03-Atividade_3.sql
+    networks:
+      - inf010-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  inf010-network:
+    driver: bridge
