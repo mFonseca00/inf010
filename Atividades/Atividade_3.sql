@@ -72,7 +72,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- teste
+-- Teste
 UPDATE indice
 SET idh_educacao = idh_educacao + 0.04
 WHERE codmunicipio = 354880 AND ano = 1991;
