@@ -1,7 +1,7 @@
 -- CONSULTAS NA BASE DE DADOS ACADEMICOS:
-
+----------------------------------------------------------
 -- OPÇÕES DEFINIDAS PARA REALIZAR CONSULTAS:
-
+----------------------------------------------------------
 -- OPÇÃO 1: VIEW COM CASE
 CREATE VIEW v_notas_numericas AS
 SELECT 
@@ -62,225 +62,154 @@ INSERT INTO escala_notas VALUES
 CREATE INDEX idx_escala_grade ON escala_notas(grade);
 
 --------------------------------------------------------------------
--- CONSULTAS:
+-- CONSULTAS COM ANÁLISE DE PERFORMANCE:
 --------------------------------------------------------------------
-
--- Tabela para resultados
-DROP TABLE IF EXISTS benchmark_resultados;
-CREATE TABLE benchmark_resultados (
-    id SERIAL PRIMARY KEY,
-    consulta VARCHAR(200),
-    opcao VARCHAR(50),
-    tempo_ms NUMERIC(10,2),
-    timestamp TIMESTAMP DEFAULT NOW()
-);
 
 -- CONSULTA 1: Departamentos, Professores, Turmas e Média (2006-2010)
 
--- Opção 1: VIEW
-DO $$
-DECLARE
-    inicio TIMESTAMP;
-    tempo_ms NUMERIC;
-BEGIN
-    inicio := clock_timestamp();
-    
-    PERFORM
-        d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year,
-        COUNT(v.ID) AS total_alunos,
-        ROUND(AVG(v.nota_numerica), 2) AS media_notas,
-        ROUND(MIN(v.nota_numerica), 2) AS nota_minima,
-        ROUND(MAX(v.nota_numerica), 2) AS nota_maxima
-    FROM department d
-    INNER JOIN instructor i ON d.dept_name = i.dept_name
-    INNER JOIN teaches t ON i.ID = t.ID
-    INNER JOIN section sec ON t.course_id = sec.course_id 
-        AND t.sec_id = sec.sec_id 
-        AND t.semester = sec.semester 
-        AND t.year = sec.year
-    INNER JOIN course c ON sec.course_id = c.course_id
-    INNER JOIN v_notas_numericas v ON sec.course_id = v.course_id 
-        AND sec.sec_id = v.sec_id 
-        AND sec.semester = v.semester 
-        AND sec.year = v.year
-    WHERE sec.year BETWEEN 2006 AND 2010 AND v.nota_numerica IS NOT NULL
-    GROUP BY d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year;
-    
-    tempo_ms := EXTRACT(EPOCH FROM (clock_timestamp() - inicio)) * 1000;
-    INSERT INTO benchmark_resultados VALUES (DEFAULT, 'Consulta 1', 'VIEW', tempo_ms, DEFAULT);
-END $$;
+-- Consulta Original (SEM otimização)
+EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+SELECT
+    d.dept_name AS departamento,
+    i.name AS professor,
+    c.title AS disciplina,
+    sec.sec_id AS turma,
+    sec.semester AS semestre,
+    sec.year AS ano,
+    COUNT(v.ID) AS total_alunos,
+    ROUND(AVG(v.nota_numerica), 2) AS media_notas,
+    ROUND(MIN(v.nota_numerica), 2) AS nota_minima,
+    ROUND(MAX(v.nota_numerica), 2) AS nota_maxima
+FROM department d
+INNER JOIN instructor i ON d.dept_name = i.dept_name
+INNER JOIN teaches t ON i.ID = t.ID
+INNER JOIN section sec ON t.course_id = sec.course_id 
+    AND t.sec_id = sec.sec_id 
+    AND t.semester = sec.semester 
+    AND t.year = sec.year
+INNER JOIN course c ON sec.course_id = c.course_id
+INNER JOIN v_notas_numericas v ON sec.course_id = v.course_id 
+    AND sec.sec_id = v.sec_id 
+    AND sec.semester = v.semester 
+    AND sec.year = v.year
+WHERE sec.year BETWEEN 2006 AND 2010 AND v.nota_numerica IS NOT NULL
+GROUP BY d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year
+ORDER BY d.dept_name, ano, semestre, c.title;
 
--- Opção 2: FUNCTION
-DO $$
-DECLARE
-    inicio TIMESTAMP;
-    tempo_ms NUMERIC;
-BEGIN
-    inicio := clock_timestamp();
-    
-    PERFORM
-        d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year,
-        COUNT(tk.ID) AS total_alunos,
-        ROUND(AVG(converter_nota(tk.grade)), 2) AS media_notas,
-        ROUND(MIN(converter_nota(tk.grade)), 2) AS nota_minima,
-        ROUND(MAX(converter_nota(tk.grade)), 2) AS nota_maxima
-    FROM department d
-    INNER JOIN instructor i ON d.dept_name = i.dept_name
-    INNER JOIN teaches t ON i.ID = t.ID
-    INNER JOIN section sec ON t.course_id = sec.course_id 
-        AND t.sec_id = sec.sec_id 
-        AND t.semester = sec.semester 
-        AND t.year = sec.year
-    INNER JOIN course c ON sec.course_id = c.course_id
-    INNER JOIN takes tk ON sec.course_id = tk.course_id 
-        AND sec.sec_id = tk.sec_id 
-        AND sec.semester = tk.semester 
-        AND sec.year = tk.year
-    WHERE sec.year BETWEEN 2006 AND 2010 AND tk.grade IS NOT NULL
-    GROUP BY d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year;
-    
-    tempo_ms := EXTRACT(EPOCH FROM (clock_timestamp() - inicio)) * 1000;
-    INSERT INTO benchmark_resultados VALUES (DEFAULT, 'Consulta 1', 'FUNCTION', tempo_ms, DEFAULT);
-END $$;
+-- Intervenção: Criar índices para otimizar a consulta
+CREATE INDEX IF NOT EXISTS idx_section_year ON section(year);
+CREATE INDEX IF NOT EXISTS idx_section_composite ON section(course_id, sec_id, semester, year);
+CREATE INDEX IF NOT EXISTS idx_teaches_composite ON teaches(course_id, sec_id, semester, year);
+CREATE INDEX IF NOT EXISTS idx_takes_composite ON takes(course_id, sec_id, semester, year);
+CREATE INDEX IF NOT EXISTS idx_instructor_dept ON instructor(dept_name);
 
--- Opção 3: JOIN
-DO $$
-DECLARE
-    inicio TIMESTAMP;
-    tempo_ms NUMERIC;
-BEGIN
-    inicio := clock_timestamp();
-    
-    PERFORM
-        d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year,
-        COUNT(tk.ID) AS total_alunos,
-        ROUND(AVG(en.valor_numerico), 2) AS media_notas,
-        ROUND(MIN(en.valor_numerico), 2) AS nota_minima,
-        ROUND(MAX(en.valor_numerico), 2) AS nota_maxima
-    FROM department d
-    INNER JOIN instructor i ON d.dept_name = i.dept_name
-    INNER JOIN teaches t ON i.ID = t.ID
-    INNER JOIN section sec ON t.course_id = sec.course_id 
-        AND t.sec_id = sec.sec_id 
-        AND t.semester = sec.semester 
-        AND t.year = sec.year
-    INNER JOIN course c ON sec.course_id = c.course_id
-    INNER JOIN takes tk ON sec.course_id = tk.course_id 
-        AND sec.sec_id = tk.sec_id 
-        AND sec.semester = tk.semester 
-        AND sec.year = tk.year
-    LEFT JOIN escala_notas en ON tk.grade = en.grade
-    WHERE sec.year BETWEEN 2006 AND 2010 AND en.valor_numerico IS NOT NULL
-    GROUP BY d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year;
-    
-    tempo_ms := EXTRACT(EPOCH FROM (clock_timestamp() - inicio)) * 1000;
-    INSERT INTO benchmark_resultados VALUES (DEFAULT, 'Consulta 1', 'JOIN', tempo_ms, DEFAULT);
-END $$;
+-- Consulta Otimizada (COM índices)
+EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+SELECT
+    d.dept_name AS departamento,
+    i.name AS professor,
+    c.title AS disciplina,
+    sec.sec_id AS turma,
+    sec.semester AS semestre,
+    sec.year AS ano,
+    COUNT(v.ID) AS total_alunos,
+    ROUND(AVG(v.nota_numerica), 2) AS media_notas,
+    ROUND(MIN(v.nota_numerica), 2) AS nota_minima,
+    ROUND(MAX(v.nota_numerica), 2) AS nota_maxima
+FROM department d
+INNER JOIN instructor i ON d.dept_name = i.dept_name
+INNER JOIN teaches t ON i.ID = t.ID
+INNER JOIN section sec ON t.course_id = sec.course_id 
+    AND t.sec_id = sec.sec_id 
+    AND t.semester = sec.semester 
+    AND t.year = sec.year
+INNER JOIN course c ON sec.course_id = c.course_id
+INNER JOIN v_notas_numericas v ON sec.course_id = v.course_id 
+    AND sec.sec_id = v.sec_id 
+    AND sec.semester = v.semester 
+    AND sec.year = v.year
+WHERE sec.year BETWEEN 2006 AND 2010 AND v.nota_numerica IS NOT NULL
+GROUP BY d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year
+ORDER BY d.dept_name, ano, semestre, c.title;
+
+/*
+ANÁLISE DA CONSULTA 1:
+- Comparar os planos de execução (ANTES e DEPOIS)
+- Verificar se houve mudança de Seq Scan para Index Scan
+- Observar redução no tempo de execução (Execution Time)
+- Analisar uso de buffers (Buffers: shared hit/read)
+- Comentar se a intervenção foi efetiva ou não
+*/
+
+--------------------------------------------------------------------
 
 -- CONSULTA 2: Alunos, Disciplinas, Professores, Notas e Departamentos
 
--- Opção 1: VIEW
-DO $$
-DECLARE
-    inicio TIMESTAMP;
-    tempo_ms NUMERIC;
-BEGIN
-    inicio := clock_timestamp();
-    
-    PERFORM
-        s.name, c.title, i.name, d.dept_name, v.semester, v.year, 
-        v.grade, v.nota_numerica
-    FROM student s
-    INNER JOIN v_notas_numericas v ON s.ID = v.ID
-    INNER JOIN course c ON v.course_id = c.course_id
-    INNER JOIN section sec ON v.course_id = sec.course_id 
-        AND v.sec_id = sec.sec_id 
-        AND v.semester = sec.semester 
-        AND v.year = sec.year
-    INNER JOIN teaches t ON sec.course_id = t.course_id 
-        AND sec.sec_id = t.sec_id 
-        AND sec.semester = t.semester 
-        AND sec.year = t.year
-    INNER JOIN instructor i ON t.ID = i.ID
-    INNER JOIN department d ON i.dept_name = d.dept_name
-    WHERE v.nota_numerica IS NOT NULL;
-    
-    tempo_ms := EXTRACT(EPOCH FROM (clock_timestamp() - inicio)) * 1000;
-    INSERT INTO benchmark_resultados VALUES (DEFAULT, 'Consulta 2', 'VIEW', tempo_ms, DEFAULT);
-END $$;
+-- Consulta Original (SEM otimização)
+EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+SELECT
+    s.name AS aluno,
+    c.title AS disciplina,
+    i.name AS professor,
+    d.dept_name AS departamento,
+    v.semester AS semestre,
+    v.year AS ano,
+    v.grade AS nota_letra,
+    v.nota_numerica
+FROM student s
+INNER JOIN v_notas_numericas v ON s.ID = v.ID
+INNER JOIN course c ON v.course_id = c.course_id
+INNER JOIN section sec ON v.course_id = sec.course_id 
+    AND v.sec_id = sec.sec_id 
+    AND v.semester = sec.semester 
+    AND v.year = sec.year
+INNER JOIN teaches t ON sec.course_id = t.course_id 
+    AND sec.sec_id = t.sec_id 
+    AND sec.semester = t.semester 
+    AND sec.year = t.year
+INNER JOIN instructor i ON t.ID = i.ID
+INNER JOIN department d ON i.dept_name = d.dept_name
+WHERE v.nota_numerica IS NOT NULL
+ORDER BY s.name, ano, semestre, c.title;
 
--- Opção 2: FUNCTION
-DO $$
-DECLARE
-    inicio TIMESTAMP;
-    tempo_ms NUMERIC;
-BEGIN
-    inicio := clock_timestamp();
-    
-    PERFORM
-        s.name, c.title, i.name, d.dept_name, tk.semester, tk.year,
-        tk.grade, converter_nota(tk.grade) AS nota_numerica
-    FROM student s
-    INNER JOIN takes tk ON s.ID = tk.ID
-    INNER JOIN course c ON tk.course_id = c.course_id
-    INNER JOIN section sec ON tk.course_id = sec.course_id 
-        AND tk.sec_id = sec.sec_id 
-        AND tk.semester = sec.semester 
-        AND tk.year = sec.year
-    INNER JOIN teaches t ON sec.course_id = t.course_id 
-        AND sec.sec_id = t.sec_id 
-        AND sec.semester = t.semester 
-        AND sec.year = t.year
-    INNER JOIN instructor i ON t.ID = i.ID
-    INNER JOIN department d ON i.dept_name = d.dept_name
-    WHERE tk.grade IS NOT NULL;
-    
-    tempo_ms := EXTRACT(EPOCH FROM (clock_timestamp() - inicio)) * 1000;
-    INSERT INTO benchmark_resultados VALUES (DEFAULT, 'Consulta 2', 'FUNCTION', tempo_ms, DEFAULT);
-END $$;
+-- Intervenção: Criar índices adicionais para otimizar a consulta
+CREATE INDEX IF NOT EXISTS idx_student_id ON student(ID);
+CREATE INDEX IF NOT EXISTS idx_takes_id ON takes(ID);
+CREATE INDEX IF NOT EXISTS idx_teaches_id ON teaches(ID);
+CREATE INDEX IF NOT EXISTS idx_course_id ON course(course_id);
 
--- Opção 3: JOIN
-DO $$
-DECLARE
-    inicio TIMESTAMP;
-    tempo_ms NUMERIC;
-BEGIN
-    inicio := clock_timestamp();
-    
-    PERFORM
-        s.name, c.title, i.name, d.dept_name, tk.semester, tk.year,
-        tk.grade, en.valor_numerico AS nota_numerica
-    FROM student s
-    INNER JOIN takes tk ON s.ID = tk.ID
-    INNER JOIN course c ON tk.course_id = c.course_id
-    INNER JOIN section sec ON tk.course_id = sec.course_id 
-        AND tk.sec_id = sec.sec_id 
-        AND tk.semester = sec.semester 
-        AND tk.year = sec.year
-    INNER JOIN teaches t ON sec.course_id = t.course_id 
-        AND sec.sec_id = t.sec_id 
-        AND sec.semester = t.semester 
-        AND sec.year = t.year
-    INNER JOIN instructor i ON t.ID = i.ID
-    INNER JOIN department d ON i.dept_name = d.dept_name
-    LEFT JOIN escala_notas en ON tk.grade = en.grade
-    WHERE en.valor_numerico IS NOT NULL;
-    
-    tempo_ms := EXTRACT(EPOCH FROM (clock_timestamp() - inicio)) * 1000;
-    INSERT INTO benchmark_resultados VALUES (DEFAULT, 'Consulta 2', 'JOIN', tempo_ms, DEFAULT);
-END $$;
+-- Consulta Otimizada (COM índices)
+EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+SELECT
+    s.name AS aluno,
+    c.title AS disciplina,
+    i.name AS professor,
+    d.dept_name AS departamento,
+    v.semester AS semestre,
+    v.year AS ano,
+    v.grade AS nota_letra,
+    v.nota_numerica
+FROM student s
+INNER JOIN v_notas_numericas v ON s.ID = v.ID
+INNER JOIN course c ON v.course_id = c.course_id
+INNER JOIN section sec ON v.course_id = sec.course_id 
+    AND v.sec_id = sec.sec_id 
+    AND v.semester = sec.semester 
+    AND v.year = sec.year
+INNER JOIN teaches t ON sec.course_id = t.course_id 
+    AND sec.sec_id = t.sec_id 
+    AND sec.semester = t.semester 
+    AND sec.year = t.year
+INNER JOIN instructor i ON t.ID = i.ID
+INNER JOIN department d ON i.dept_name = d.dept_name
+WHERE v.nota_numerica IS NOT NULL
+ORDER BY s.name, ano, semestre, c.title;
 
--- Resultados
-SELECT 
-    consulta, opcao, ROUND(tempo_ms, 2) AS tempo_ms,
-    RANK() OVER (PARTITION BY consulta ORDER BY tempo_ms) AS ranking
-FROM benchmark_resultados
-ORDER BY consulta, ranking;
-
--- Resumo
-SELECT 
-    opcao, ROUND(AVG(tempo_ms), 2) AS tempo_medio_ms,
-    RANK() OVER (ORDER BY AVG(tempo_ms)) AS ranking_geral
-FROM benchmark_resultados
-GROUP BY opcao
-ORDER BY ranking_geral;
+/*
+ANÁLISE DA CONSULTA 2:
+- Comparar os planos de execução (ANTES e DEPOIS)
+- Verificar se houve mudança de Seq Scan para Index Scan
+- Observar redução no tempo de execução (Execution Time)
+- Analisar uso de buffers (Buffers: shared hit/read)
+- Comentar se a intervenção foi efetiva ou não
+*/
