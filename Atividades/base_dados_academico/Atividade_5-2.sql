@@ -67,8 +67,8 @@ CREATE INDEX idx_escala_grade ON escala_notas(grade);
 
 -- CONSULTA 1: Departamentos, Professores, Turmas e Média (2006-2010)
 
--- Consulta Original (SEM otimização)
-EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+-- Consulta Original (SEM otimização) Query complete 00:00:00.126
+
 SELECT
     d.dept_name AS departamento,
     i.name AS professor,
@@ -103,8 +103,8 @@ CREATE INDEX IF NOT EXISTS idx_teaches_composite ON teaches(course_id, sec_id, s
 CREATE INDEX IF NOT EXISTS idx_takes_composite ON takes(course_id, sec_id, semester, year);
 CREATE INDEX IF NOT EXISTS idx_instructor_dept ON instructor(dept_name);
 
--- Consulta Otimizada (COM índices)
-EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+-- Consulta Otimizada (COM índices) Query complete Query complete 00:00:00.100
+
 SELECT
     d.dept_name AS departamento,
     i.name AS professor,
@@ -132,21 +132,12 @@ WHERE sec.year BETWEEN 2006 AND 2010 AND v.nota_numerica IS NOT NULL
 GROUP BY d.dept_name, i.name, c.title, sec.sec_id, sec.semester, sec.year
 ORDER BY d.dept_name, ano, semestre, c.title;
 
-/*
-ANÁLISE DA CONSULTA 1:
-- Comparar os planos de execução (ANTES e DEPOIS)
-- Verificar se houve mudança de Seq Scan para Index Scan
-- Observar redução no tempo de execução (Execution Time)
-- Analisar uso de buffers (Buffers: shared hit/read)
-- Comentar se a intervenção foi efetiva ou não
-*/
-
 --------------------------------------------------------------------
 
 -- CONSULTA 2: Alunos, Disciplinas, Professores, Notas e Departamentos
 
--- Consulta Original (SEM otimização)
-EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+-- Consulta Original (SEM otimização) Query complete 00:00:00.480
+
 SELECT
     s.name AS aluno,
     c.title AS disciplina,
@@ -172,14 +163,14 @@ INNER JOIN department d ON i.dept_name = d.dept_name
 WHERE v.nota_numerica IS NOT NULL
 ORDER BY s.name, ano, semestre, c.title;
 
--- Intervenção: Criar índices adicionais para otimizar a consulta
+-- Intervenção: Criar índices adicionais para otimizar a consulta 
 CREATE INDEX IF NOT EXISTS idx_student_id ON student(ID);
 CREATE INDEX IF NOT EXISTS idx_takes_id ON takes(ID);
 CREATE INDEX IF NOT EXISTS idx_teaches_id ON teaches(ID);
 CREATE INDEX IF NOT EXISTS idx_course_id ON course(course_id);
 
--- Consulta Otimizada (COM índices)
-EXPLAIN (ANALYZE, BUFFERS, COSTS, VERBOSE)
+-- Consulta Otimizada (COM índices) Query complete 00:00:00.419
+
 SELECT
     s.name AS aluno,
     c.title AS disciplina,
